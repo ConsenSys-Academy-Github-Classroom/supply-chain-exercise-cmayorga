@@ -41,53 +41,26 @@ contract SupplyChain {
   // Create a modifer, `isOwner` that checks if the msg.sender is the owner of the contract
   // <modifier: isOwner
 	modifier isOwner {
-		require(owner == msg.sender);
+		require(owner == msg.sender, "Not owner");
 		_;
-	}
-
-	modifier isSold(uint sku) {
-		require(items[sku].state == State.Sold);
-		_;
-	}
-
-	modifier isShipped(uint sku) {
-		require(items[sku].state == State.Shipped);
-		_;
-	}
-
-	modifier isForSale(uint sku) {
-		require(items[sku].state == State.ForSale);
-		_;
-	}	
-
-	modifier notSeller(uint sku) {
-		require(items[sku].seller != msg.sender);
-		_;
-	}	
-
-	modifier refund(uint sku) {
-	  if (msg.value > items[sku].price){
-		  items[sku].buyer.transfer(items[sku].price - msg.value);
-	  }
-	  _;
 	}
 
   modifier verifyCaller (address _address) { 
-     require (msg.sender == _address); 
+     require (msg.sender == _address, "Not verified caller"); 
     _;
   }
 
   modifier paidEnough(uint _price) { 
-    require(msg.value >= _price); 
+    require(msg.value >= _price, "Insufficient funds"); 
     _;
   }
 
   modifier checkValue(uint _sku) {
     //refund them after pay for item (why it is before, _ checks for logic before func)
     _;
-    // uint _price = items[_sku].price;
-    // uint amountToRefund = msg.value - _price;
-    // items[_sku].buyer.transfer(amountToRefund);
+    uint _price = items[_sku].price;
+    uint amountToRefund = msg.value - _price;
+    items[_sku].buyer.transfer(amountToRefund);
   }
 
   // For each of the following modifiers, use what you learned about modifiers
@@ -103,10 +76,31 @@ contract SupplyChain {
   // modifier shipped(uint _sku) 
   // modifier received(uint _sku) 
 
+	modifier sold(uint sku) {
+		require(items[sku].state == State.Sold, "Item is not sold");
+		_;
+	}
+
+	modifier shipped(uint sku) {
+		require(items[sku].state == State.Shipped, "Item is not shipped");
+		_;
+	}
+
+	modifier received(uint sku) {
+		require(items[sku].state == State.Received, "Item is not received");
+		_;
+	}
+
+	modifier forSale(uint sku) {
+		require(items[sku].state == State.ForSale && items[sku].price > 0, "Item is not for sale");
+		_;
+	}  
+
   constructor() public {
     // 1. Set the owner to the transaction sender
 	owner = msg.sender;
     // 2. Initialize the sku count to 0. Question, is this necessary?
+	skuCount = 0;
   }
 
   function addItem(string memory _name, uint _price) public returns (bool) {
@@ -116,8 +110,8 @@ contract SupplyChain {
       sku: skuCount, 
       price: _price, 
       state: State.ForSale, 
-      seller: msg.sender, 
-      buyer: address(0)
+      seller: payable(msg.sender),
+      buyer: payable(address(0))
     });
     // 2. Increment the skuCount by one
 	skuCount = skuCount + 1;
@@ -151,9 +145,9 @@ contract SupplyChain {
   //    - check the value after the function is called to make 
   //      sure the buyer is refunded any excess ether sent. 
   // 6. call the event associated with this function!
-  function buyItem(uint sku) public payable isForSale(sku) paidEnough(items[sku].price) refund(items[sku].price){
-	  items[sku].seller.transfer(items[sku].price);
-	  items[sku].buyer = msg.sender;
+  function buyItem(uint sku) public payable forSale(sku) paidEnough(items[sku].price) checkValue(sku){
+	  items[sku].buyer = payable(msg.sender);
+	  items[sku].seller.transfer(items[sku].price);	  
 	  items[sku].state = State.Sold;
 	  emit LogSold(sku);
   }
@@ -163,7 +157,7 @@ contract SupplyChain {
   //    - the person calling this function is the seller. 
   // 2. Change the state of the item to shipped. 
   // 3. call the event associated with this function!
-  function shipItem(uint sku) public isSold(sku) verifyCaller(items[sku].seller){
+  function shipItem(uint sku) public sold(sku) verifyCaller(items[sku].seller){
 	  items[sku].state = State.Shipped;
 	  emit LogShipped(sku);
   }
@@ -173,7 +167,7 @@ contract SupplyChain {
   //    - the person calling this function is the buyer. 
   // 2. Change the state of the item to received. 
   // 3. Call the event associated with this function!
-  function receiveItem(uint sku) public isShipped(sku) verifyCaller(items[sku].seller){
+  function receiveItem(uint sku) public shipped(sku) verifyCaller(items[sku].buyer){
 	  items[sku].state = State.Received;
 	  emit LogReceived(sku);
   }
